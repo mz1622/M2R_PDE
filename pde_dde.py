@@ -32,6 +32,7 @@ data = dde.data.PDE(
 )
  
 #Nueral network model
+
 layer_size = [1] + [50] * 3 + [1]
 activation = "sin"
 initializer = "Glorot uniform"

@@ -73,14 +73,24 @@ for itr in range(6000):
 
 
 
+# Plot and save the training loss
+plt.figure(figsize=(10, 8))
+plt.plot(train_loss_record, label='Training Loss')
+plt.xlabel('Iteration', fontsize=15)
+plt.ylabel('Loss', fontsize=15)
+plt.legend(fontsize=15)
+plt.title('Training Loss Over Iterations', fontsize=15)
+plt.savefig("training_loss_plot.png")  # Save as PNG file
+
+# Generate predictions and plot
 test_t = np.linspace(0, 1, 100)
 pred_u = NN.predict(test_t).ravel()
 
-plt.figure(figsize = (10,8))
-
-plt.plot(test_t, pred_u, '--r', label = 'Prediction')
-plt.plot(test_t, 0*test_t, '-k',label = 'True')
-plt.legend(fontsize = 15)
-plt.xlabel('t', fontsize = 15)
-plt.ylabel('u', fontsize = 15)
-plt.show()
+plt.figure(figsize=(10, 8))
+plt.plot(test_t, pred_u, '--r', label='Prediction')
+plt.plot(test_t, 0 * test_t, '-k', label='True')
+plt.legend(fontsize=15)
+plt.xlabel('t', fontsize=15)
+plt.ylabel('u', fontsize=15)
+plt.title('Prediction Plot', fontsize=15)
+plt.savefig("sine_wave_plot.png")  # Save this plot as well
