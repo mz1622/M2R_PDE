@@ -8,7 +8,7 @@ find the derivative of F_approx and record the best neural network with least er
 
 
 |f(x) - f(y)| < c * |x - y|
-| F_approx(f(x_i)) | < c
+| F_approx(x_i) | < c
 
 check: F_approx(x) < 1/1000 for x = 0, 1/1000, 2/1000, ...
 

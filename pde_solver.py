@@ -7,11 +7,10 @@ import math
 tf.keras.backend.set_floatx('float64')
 
 def sine_activation(x):
-    return tf.sin(2*math.pi*x)
+    return tf.sin(2 * math.pi * x)
 
 NN = tf.keras.models.Sequential([
     tf.keras.layers.Input((1,)),
-    tf.keras.layers.Dense(units=32, activation=sine_activation),
     tf.keras.layers.Dense(units=32, activation=sine_activation),
     tf.keras.layers.Dense(units=1)
 ])
@@ -21,7 +20,7 @@ NN.summary()
 optm = tf.keras.optimizers.Adam(learning_rate=0.001)
 
 def ode_system(t, net):
-    t = tf.constant(t.reshape(-1, 1), dtype=tf.float64)
+    t = tf.reshape(t, [-1, 1])
     t_0 = tf.zeros((1, 1), dtype=tf.float64)
     t_1 = tf.ones((1, 1), dtype=tf.float64)
     zeros = tf.zeros((1, 1), dtype=tf.float64)
@@ -36,24 +35,24 @@ def ode_system(t, net):
     u_tt = tape1.gradient(u_t, t)
     u_t2 = 2 * u * u_t  # Chain rule for derivative of u*u with respect to t
 
-    ode_loss = - u_tt + u_t2
+    ode_loss = - u_tt + u_t2 + tf.sin(t/10)
     IC_loss = net(t_0) - zeros
     EC_loss = net(t_1) - zeros
     BC_loss = net(t_1) - net(t_0)
 
-    square_loss = tf.square(ode_loss) + tf.square(BC_loss) + tf.square(IC_loss) + tf.square(EC_loss)
+    square_loss = tf.square(ode_loss) + tf.square(BC_loss)
     total_loss = tf.reduce_mean(square_loss)
 
     del tape1  # Clean up
 
-    return total_loss
+    return total_loss, ode_loss
 
-train_t = np.linspace(0, 1, 100).reshape(-1, 1).astype(np.float64)
+train_t = np.linspace(0, 1, 1001).reshape(-1, 1).astype(np.float64)
 train_loss_record = []
 
-for itr in range(2000):
+for itr in range(3000):
     with tf.GradientTape() as tape:
-        train_loss = ode_system(train_t, NN)
+        train_loss, _ = ode_system(tf.constant(train_t), NN)
         train_loss_record.append(train_loss.numpy())
 
         grad_w = tape.gradient(train_loss, NN.trainable_variables)
@@ -76,67 +75,98 @@ test_t = np.linspace(0, 1, 100).astype(np.float64)
 pred_u = NN.predict(test_t).ravel()
 
 ## TODO For the Neural Network above, find the bound for the derivative of F_approx (using Summation)
-def spectral_norm(matrix):
-    singular_values = tf.linalg.svd(matrix, compute_uv=False)
-    return tf.reduce_max(singular_values)
+def NN_derivative(t, net):
+    """
+    Compute the derivative of the neural network 
+    """
+    # Ensure t is a tensor and has the correct shape
+    t = tf.convert_to_tensor(t, dtype=tf.float64)
+    t = tf.reshape(t, [-1, 1])
+    
+    with tf.GradientTape() as tape:
+        tape.watch(t)
+        u = net(t)
+    
+    u_t = tape.gradient(u, t)
+    return u_t
 
-# Function to calculate the Lipschitz constant for the neural network
-def calculate_lipschitz_constant(model):
-    max_derivative = 2 * np.pi  # Maximum absolute value of derivative of sine(2πx)
-    lipschitz_constant = 1.0
-    for layer in model.layers:
-        if isinstance(layer, tf.keras.layers.Dense):
-            weights = layer.get_weights()[0]
-            norm = spectral_norm(weights)
-            lipschitz_constant *= norm * max_derivative
-    return lipschitz_constant
+def F_derivative(t, net):
+    """
+    Compute the value of the derivative function:
+    - d^3f/dx^3 + 2 * ((df/dx)^2 + f * d^2f/dx^2)
+    """
+    t = tf.convert_to_tensor(t, dtype=tf.float64)
+    t = tf.reshape(t, [-1, 1])
+    
+    with tf.GradientTape(persistent=True) as tape3:
+        tape3.watch(t)
+        with tf.GradientTape(persistent=True) as tape2:
+            tape2.watch(t)
+            with tf.GradientTape() as tape1:
+                tape1.watch(t)
+                f = net(t)
+            df_dx = tape1.gradient(f, t)
+        d2f_dx2 = tape2.gradient(df_dx, t)
+    d3f_dx3 = tape3.gradient(d2f_dx2, t)
+    
+    result = -d3f_dx3 + 2 * ((df_dx ** 2) + f * d2f_dx2)
+    
+    del tape1, tape2, tape3  # Clean up
+    
+    return result
 
-# Calculate the Lipschitz constant
-lipschitz_constant = calculate_lipschitz_constant(NN)
-print(f"Lipschitz constant: {lipschitz_constant}")
+def Lipschitz_constant(t, net):
+    constant = NN_derivative(t, net) * F_derivative(t, net)
+    return constant
 
 
 ## TODO Lipshitz methods
+
+# Function to calculate the residuals
+def calculate_residuals(t, net):
+    t_tensor = tf.constant(tf.reshape(t, [-1, 1]), dtype=tf.float64)
+    _, residuals = ode_system(t_tensor, net)
+    return residuals
+
+
+
 # Define the points where we need to evaluate the error
 x_points = np.linspace(0, 1, 1001).astype(np.float64)
-x_i = x_points[::100]  # For simplicity, taking every 100th point as x_i
+x_i = x_points
+
+# Calculate the Lipschitz constant
+lipschitz_constant = Lipschitz_constant(x_i, NN)
+print(f"Lipschitz constant: {lipschitz_constant}")
 
 # Calculate the difference bound
 error_bounds = []
-for x in x_points:
-    nearest_x_i = min(x_i, key=lambda xi: abs(x - xi))  # Find the nearest x_i
-    error_bound = lipschitz_constant * abs(x - nearest_x_i)
+for i,x in enumerate(x_points):
+    error_bound = lipschitz_constant[i][0] * 1/1000
     error_bounds.append(error_bound)
 
-# Convert to numpy array for easier manipulation
 error_bounds = np.array(error_bounds)
 
-# Evaluate the model at these points
-predictions = NN.predict(x_points).ravel()
+residuals = calculate_residuals(x_i, NN).numpy().ravel()
 
-# Calculate the total error bound
-total_errors = np.abs(predictions) + error_bounds
+# |F(f_approx)(x)| < | F(f)(x_i)| (Known) + | F(f)(x) - F(f)(x_i) |
+total_errors = np.abs(residuals) + error_bounds[:len(residuals)]
 
-# Print or plot the error bounds and predictions
-import matplotlib.pyplot as plt
 
 plt.figure(figsize=(10, 8))
-plt.plot(x_points, predictions, '--r', label='Prediction')
-plt.plot(x_points, error_bounds, ':b', label='Error Bound')
-plt.plot(x_points, total_errors, '-g', label='Total Error')
+plt.plot(x_points[:len(residuals)], residuals, '--r', label='Residuals')
+plt.plot(x_points[:len(residuals)], error_bounds[:len(residuals)], ':b', label='Error Bound')
+plt.plot(x_points[:len(residuals)], total_errors, '-g', label='Total Error')
 plt.xlabel('x')
 plt.ylabel('F(f_approx)(x)')
 plt.legend()
 plt.title('Prediction and Error Bound')
-plt.show()
-
+plt.savefig("Error.png")
 
 NN.save('best_model.h5')
 
-
 plt.figure(figsize=(10, 8))
 plt.plot(test_t, pred_u, '--r', label='Prediction')
-plt.plot(test_t, 0 * test_t, '-k', label='True')
+plt.plot(test_t, 0 * test_t, '-k', label='zero_solution')
 plt.legend()
 plt.xlabel('t')
 plt.ylabel('u')
