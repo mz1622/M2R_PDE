@@ -75,9 +75,63 @@ plt.savefig("training_loss_plot.png")  # Save plot
 test_t = np.linspace(0, 1, 100).astype(np.float64)
 pred_u = NN.predict(test_t).ravel()
 
-## TODO find the bound for the derivative of F_approx
-## TODO Write the above Lipshitz methos
+## TODO For the Neural Network above, find the bound for the derivative of F_approx (using Summation)
+def spectral_norm(matrix):
+    singular_values = tf.linalg.svd(matrix, compute_uv=False)
+    return tf.reduce_max(singular_values)
 
+# Function to calculate the Lipschitz constant for the neural network
+def calculate_lipschitz_constant(model):
+    max_derivative = 2 * np.pi  # Maximum absolute value of derivative of sine(2πx)
+    lipschitz_constant = 1.0
+    for layer in model.layers:
+        if isinstance(layer, tf.keras.layers.Dense):
+            weights = layer.get_weights()[0]
+            norm = spectral_norm(weights)
+            lipschitz_constant *= norm * max_derivative
+    return lipschitz_constant
+
+# Calculate the Lipschitz constant
+lipschitz_constant = calculate_lipschitz_constant(NN)
+print(f"Lipschitz constant: {lipschitz_constant}")
+
+
+## TODO Lipshitz methods
+# Define the points where we need to evaluate the error
+x_points = np.linspace(0, 1, 1001).astype(np.float64)
+x_i = x_points[::100]  # For simplicity, taking every 100th point as x_i
+
+# Calculate the difference bound
+error_bounds = []
+for x in x_points:
+    nearest_x_i = min(x_i, key=lambda xi: abs(x - xi))  # Find the nearest x_i
+    error_bound = lipschitz_constant * abs(x - nearest_x_i)
+    error_bounds.append(error_bound)
+
+# Convert to numpy array for easier manipulation
+error_bounds = np.array(error_bounds)
+
+# Evaluate the model at these points
+predictions = NN.predict(x_points).ravel()
+
+# Calculate the total error bound
+total_errors = np.abs(predictions) + error_bounds
+
+# Print or plot the error bounds and predictions
+import matplotlib.pyplot as plt
+
+plt.figure(figsize=(10, 8))
+plt.plot(x_points, predictions, '--r', label='Prediction')
+plt.plot(x_points, error_bounds, ':b', label='Error Bound')
+plt.plot(x_points, total_errors, '-g', label='Total Error')
+plt.xlabel('x')
+plt.ylabel('F(f_approx)(x)')
+plt.legend()
+plt.title('Prediction and Error Bound')
+plt.show()
+
+
+NN.save('best_model.h5')
 
 
 plt.figure(figsize=(10, 8))
@@ -87,4 +141,4 @@ plt.legend()
 plt.xlabel('t')
 plt.ylabel('u')
 plt.title('Prediction Plot')
-plt.savefig("sine_wave_plot.png")  # Save plot
+plt.savefig("PINN_result.png")  # Save plot
