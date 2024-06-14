@@ -53,7 +53,7 @@ def ode_system(t, rho, net):
     EC_loss = net(t_1) - zeros
     BC_loss = net(t_1) - net(t_0)
 
-    square_loss = tf.square(ode_loss)
+    square_loss = tf.square(ode_loss) + tf.square(IC_loss)
     total_loss = tf.reduce_mean(square_loss)
 
     del tape1  # Clean up
