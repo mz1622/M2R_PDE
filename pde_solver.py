@@ -15,14 +15,13 @@ class SineActivation(Layer):
         super(SineActivation, self).__init__()
 
     def call(self, inputs):
-        return tf.sin(2*math.pi*inputs)
+        return tf.concat([tf.sin(2*math.pi*inputs), tf.cos(2*math.pi*inputs)], 1)
 
 NN = tf.keras.models.Sequential([
         tf.keras.layers.Input((1,)),
         SineActivation(),
-        tf.keras.layers.Dense(units=64, activation=sine_activation),
+        tf.keras.layers.Dense(units=64, activation='tanh'),
         tf.keras.layers.Dense(units=1),
-
     ])
 
 NN.summary()
@@ -32,14 +31,12 @@ optm = tf.keras.optimizers.Adam(learning_rate=0.001)
 def rho_sin(t):
     return tf.sin(2*math.pi*t)/4
 
-def rho_sin2(t):
-    return (tf.cos(4 * math.pi * t) + tf.sin(6 * math.pi * t))/8
-
 
 
 
 def ode_system(t, rho, net):
     t = tf.reshape(t, [-1, 1])
+    t = tf.constant(t, dtype=tf.float64)
     t_0 = tf.zeros((1, 1), dtype=tf.float64)
     t_1 = tf.ones((1, 1), dtype=tf.float64)
     zeros = tf.zeros((1, 1), dtype=tf.float64)
@@ -53,13 +50,13 @@ def ode_system(t, rho, net):
 
     u_tt = tape1.gradient(u_t, t)
     u_t2 = 2 * u * u_t  # Chain rule for derivative of u*u with respect to t
-    ode_loss = - u_tt + u_t2  + rho(t)   # for non-trivial solution, add rho(t)
+    ode_loss = - u_tt + u_t2  - rho(t)   # for non-trivial solution, add rho(t)
 
 
     square_loss = tf.square(ode_loss)
     total_loss = tf.reduce_mean(square_loss)
 
-    del tape1  # Clean up
+    del tape1, tape2
 
     return total_loss, ode_loss
 
@@ -125,7 +122,7 @@ def Lipschitz_constant(t, net):
 # Function to calculate the residuals
 def calculate_residuals(t, net):
     t_tensor = tf.constant(tf.reshape(t, [-1, 1]), dtype=tf.float64)
-    _, residuals = ode_system(t_tensor,rho_sin, net)
+    _, residuals = ode_system(t_tensor, rho_sin, net)
     return residuals
 
 
@@ -163,7 +160,7 @@ train_loss_record = []
 
 optm = tf.keras.optimizers.Adam(learning_rate=0.001)
 
-for itr in range(1001):
+for itr in range(2001):
     with tf.GradientTape() as tape:
         train_loss, _ = ode_system(tf.constant(train_t),rho_sin, NN)
         train_loss_record.append(train_loss.numpy())
@@ -224,26 +221,26 @@ plt.savefig("Error.png")
 test_t = np.linspace(0, 1, 100).astype(np.float64)
 pred_u = NN.predict(test_t).ravel()
 
-
-
+int_bound =  lower_bound_int(NN)
+print(int_bound)
 plt.figure(figsize=(10, 8))
-plt.plot(test_t, pred_u, '-.r', label='Approximate solution')
-plt.plot(test_t, pred_u - lower_bound_int(NN), '--g', label='Approximate solution shifted')
+#plt.plot(test_t, pred_u, '-.r', label=r'$\tilde{f}(x)$')
+plt.plot(test_t, pred_u - int_bound, '--g', label=r'$\tilde{f}_{Mean Zero} (x)$')
 #plt.plot(test_t, 0 * test_t, '--k', label='zero_solution')
 plt.legend()
 plt.xlabel('x')
-plt.ylabel(r'$\tilde{f} (x)$')
+plt.ylabel('y')
 plt.title('Approximate solution Plot')
 plt.savefig("PINN_result.png")  # Save plot
 
-'''
+
 plt.figure(figsize=(10, 8))
 #plt.plot(test_t, 0 * test_t , '-k', label='Zero Solution', linewidth=3, alpha=0.8)
-plt.plot(test_t, pred_u, '--r', label='Approximate solution', linewidth=1, alpha=1)
+plt.plot(test_t, pred_u, '--r', label=r'$\tilde{f}_{Mean Zero} (x)$', linewidth=1, alpha=1)
 plt.ylim(-1, 1)
 plt.legend()
 plt.xlabel('x')
-plt.ylabel(r'$\tilde{f} (x)$')
+plt.ylabel(r'$\tilde{f}_{Mean Zero} (x)$')
 plt.title('Approximate solution Plot')
 plt.savefig("result_axis.png")
-'''
+
