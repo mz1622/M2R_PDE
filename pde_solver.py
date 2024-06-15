@@ -8,6 +8,7 @@ tf.keras.backend.set_floatx('float64')
 
 def sine_activation(x):
     return tf.sin(2 * math.pi * x)
+    
 
 class SineActivation(Layer):
     def __init__(self):
@@ -20,7 +21,8 @@ NN = tf.keras.models.Sequential([
         tf.keras.layers.Input((1,)),
         SineActivation(),
         tf.keras.layers.Dense(units=64, activation=sine_activation),
-        tf.keras.layers.Dense(units=1)
+        tf.keras.layers.Dense(units=1),
+
     ])
 
 NN.summary()
@@ -29,6 +31,9 @@ optm = tf.keras.optimizers.Adam(learning_rate=0.001)
 
 def rho_sin(t):
     return tf.sin(2*math.pi*t)/4
+
+def rho_sin2(t):
+    return (tf.cos(4 * math.pi * t) + tf.sin(6 * math.pi * t))/8
 
 
 
@@ -48,53 +53,26 @@ def ode_system(t, rho, net):
 
     u_tt = tape1.gradient(u_t, t)
     u_t2 = 2 * u * u_t  # Chain rule for derivative of u*u with respect to t
-    ode_loss = - u_tt + u_t2   # for non-trivial solution, add rho(t)
-    IC_loss = net(t_0) - zeros
-    EC_loss = net(t_1) - zeros
-    BC_loss = net(t_1) - net(t_0)
+    ode_loss = - u_tt + u_t2  + rho(t)   # for non-trivial solution, add rho(t)
 
-    square_loss = tf.square(ode_loss) + tf.square(IC_loss)
+
+    square_loss = tf.square(ode_loss)
     total_loss = tf.reduce_mean(square_loss)
 
     del tape1  # Clean up
 
     return total_loss, ode_loss
 
-train_t = np.linspace(0, 1, 1001).reshape(-1, 1).astype(np.float64)
-train_loss_record = []
-
-optm = tf.keras.optimizers.Adam(learning_rate=0.001)
-
-for itr in range(2001):
-    with tf.GradientTape() as tape:
-        train_loss, _ = ode_system(tf.constant(train_t),rho_sin, NN)
-        train_loss_record.append(train_loss.numpy())
-
-        grad_w = tape.gradient(train_loss, NN.trainable_variables)
-        optm.apply_gradients(zip(grad_w, NN.trainable_variables))
-
-    if itr % 1000 == 0:
-        print(train_loss.numpy())
-
-test_t = np.linspace(0, 1, 100).astype(np.float64)
-pred_u = NN.predict(test_t).ravel()
-
-# Plot training loss
-
-plt.figure(figsize=(10, 8))
-plt.plot(train_loss_record, label='Training Loss')
-plt.xlabel('Iteration')
-plt.ylabel('Loss')
-plt.legend()
-plt.title('Training Loss Over Iterations')
-plt.savefig("training_loss_plot.png")  # Save plot
 
 
-# Generate and plot predictions
-test_t = np.linspace(0, 1, 100).astype(np.float64)
-pred_u = NN.predict(test_t).ravel()
+
+
+
+
 
 ## TODO For the Neural Network above, find the bound for the derivative of F_approx (using Summation)
+
+
 def NN_derivative(t, net):
     """
     Compute the derivative of the neural network 
@@ -108,6 +86,8 @@ def NN_derivative(t, net):
         u = net(t)
     
     u_t = tape.gradient(u, t)
+
+    del tape
     return u_t
 
 def F_derivative(t, net):
@@ -150,16 +130,71 @@ def calculate_residuals(t, net):
 
 
 
-# Define the points where we need to evaluate the error
-x_points = np.linspace(0, 1, 1001).astype(np.float64)
-x_i = x_points
+## TODO Bound for the integral
+def lower_bound_int(net):
+    
+    x_values = np.linspace(0, 1, 1000).astype(np.float64)  # Using left endpoints for lower sum
+    f_values = net.predict(x_values).ravel()
+    k = NN_derivative(x_values, net)
 
-# Calculate the Lipschitz constant
-lipschitz_constant = Lipschitz_constant(x_i, NN)
+    # Calculate the sum
+    lower_sum = -np.sum(k)/1000000 + np.sum(f_values) /1000
+    
+    return lower_sum
 
-# Calculate the difference bound
-error_bounds = []
-for i,x in enumerate(x_points):
+def upper_bound_int(net):
+    
+
+    x_values = np.linspace(0,1,1000).astype(np.float64)  # Using left endpoints for lower sum
+    k = NN_derivative(x_values, net)
+
+    # Evaluate model at these points
+    f_values = net.predict(x_values).ravel()
+    
+    # Calculate the sum
+    upper_sum = np.sum(k)/1000000 + np.sum(f_values) /1000
+    
+    return upper_sum
+
+
+# Start training
+train_t = np.linspace(0, 1, 1001).reshape(-1, 1).astype(np.float64)
+train_loss_record = []
+
+optm = tf.keras.optimizers.Adam(learning_rate=0.001)
+
+for itr in range(1001):
+    with tf.GradientTape() as tape:
+        train_loss, _ = ode_system(tf.constant(train_t),rho_sin, NN)
+        train_loss_record.append(train_loss.numpy())
+
+        grad_w = tape.gradient(train_loss, NN.trainable_variables)
+        optm.apply_gradients(zip(grad_w, NN.trainable_variables))
+
+    if itr % 1000 == 0:
+        print(train_loss.numpy())
+
+
+# Save the model
+NN.save('best_model.h5')
+
+# Plot training loss
+plt.figure(figsize=(10, 8))
+plt.plot(train_loss_record, label='Training Loss')
+plt.xlabel('Iteration')
+plt.ylabel('Loss')
+plt.legend()
+plt.title('Training Loss Over Iterations')
+plt.savefig("training_loss_plot.png")  # Save plot
+
+
+# Error Analysis
+x_i = np.linspace(0, 1, 1001).astype(np.float64)
+
+lipschitz_constant = Lipschitz_constant(x_i, NN) # Calculate the Lipschitz constant
+
+error_bounds = []   #Find the error bounds
+for i,x in enumerate(x_i):
     error_bound = lipschitz_constant[i][0] * 1/1000
     error_bounds.append(error_bound)
 
@@ -173,21 +208,27 @@ total_errors = np.abs(residuals) + error_bounds[:len(residuals)]
 errors_in_l2 = np.sum(total_errors ** 2) * 1/1000
 print(f"Error in L2: {errors_in_l2}")
 
-
+#Plot the error bounds
 plt.figure(figsize=(10, 8))
-plt.plot(x_points[:len(residuals)], residuals, '--r', label=r'bound for |F($\tilde{f} (x_k)$)|')
-plt.plot(x_points[:len(residuals)], error_bounds[:len(residuals)], ':b', label=r'bound for |$F(\tilde{f})(x_k) - F(\tilde{f})(x)$|')
-plt.plot(x_points[:len(residuals)], total_errors, '-g', label=r'Total Error: $\delta_k$')
+plt.plot(x_i[:len(residuals)], residuals, '--r', label=r'bound for |F($\tilde{f} (x_k)$)|')
+plt.plot(x_i[:len(residuals)], error_bounds[:len(residuals)], ':b', label=r'bound for |$F(\tilde{f})(x_k) - F(\tilde{f})(x)$|')
+plt.plot(x_i[:len(residuals)], total_errors, '-g', label=r'Total Error: $\delta_k$')
 plt.xlabel('x')
 plt.ylabel('y')
 plt.legend()
 plt.title('Error Analysis(n = 1000)')
 plt.savefig("Error.png")
 
-NN.save('best_model.h5')
+
+# Generate and plot predictions
+test_t = np.linspace(0, 1, 100).astype(np.float64)
+pred_u = NN.predict(test_t).ravel()
+
+
 
 plt.figure(figsize=(10, 8))
 plt.plot(test_t, pred_u, '-.r', label='Approximate solution')
+plt.plot(test_t, pred_u - lower_bound_int(NN), '--g', label='Approximate solution shifted')
 #plt.plot(test_t, 0 * test_t, '--k', label='zero_solution')
 plt.legend()
 plt.xlabel('x')
