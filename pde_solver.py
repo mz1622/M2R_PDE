@@ -21,7 +21,7 @@ class SineActivation(Layer):
 NN = tf.keras.models.Sequential([
         tf.keras.layers.Input((1,)),
         SineActivation(),
-        tf.keras.layers.Dense(units=64, activation='tanh'),
+        tf.keras.layers.Dense(units=64, activation='sigmoid'),
         tf.keras.layers.Dense(units=1),
     ])
 
@@ -50,13 +50,15 @@ def ode_system(t, rho, net):
 
     u_tt = tape1.gradient(u_t, t)
     u_t2 = 2 * u * u_t  # Chain rule for derivative of u*u with respect to t
+    '''
     indices = [0, 10, 20]
     for idx in indices:
         print(f"u_tt[{t[idx,0].numpy()}]: {u_tt[idx,0].numpy()}, u_t2[{t[idx,0].numpy()}]: {u_t2[idx,0].numpy()}")
-
+    '''
 
     ode_loss = - u_tt + u_t2  - rho(t)   # for non-trivial solution, add rho(t)
-    square_loss = tf.square(ode_loss)
+    IC_loss = net(t_0) - 0  # Initial condition
+    square_loss = tf.square(ode_loss) 
     total_loss = tf.reduce_mean(square_loss)
 
     del tape1, tape2
@@ -68,10 +70,10 @@ def ode_system(t, rho, net):
 
 
 
-def net(t):
-    return (1/330) * tf.sin(2 * np.pi * t)
+def t_function(t):
+    return (1/280) * tf.sin(2 * np.pi * t)
 test_t = np.linspace(0, 1, 100).astype(np.float64)
-total, ode = ode_system(test_t, rho_sin, net)
+total, ode = ode_system(test_t, rho_sin, t_function)
 #print mean of ode.numpy()
 
 
@@ -171,7 +173,7 @@ train_loss_record = []
 
 optm = tf.keras.optimizers.Adam(learning_rate=0.001)
 
-for itr in range(2001):
+for itr in range(1001):
     with tf.GradientTape() as tape:
         train_loss, _ = ode_system(tf.constant(train_t),rho_sin, NN)
         train_loss_record.append(train_loss.numpy())
@@ -218,8 +220,8 @@ print(f"Error in L2: {errors_in_l2}")
 
 #Plot the error bounds
 plt.figure(figsize=(10, 8))
-plt.plot(x_i[:len(residuals)], residuals, '--r', label=r'bound for |F($\tilde{f} (x_k)$)|')
-plt.plot(x_i[:len(residuals)], error_bounds[:len(residuals)], ':b', label=r'bound for |$F(\tilde{f})(x_k) - F(\tilde{f})(x)$|')
+plt.plot(x_i[:len(residuals)], residuals, '--r', label=r'bound for |F($f_{approx} (x_k)$)|')
+plt.plot(x_i[:len(residuals)], error_bounds[:len(residuals)], ':b', label=r'bound for |$F(f_{approx})(x_k) - F(f_{approx})(x)$|')
 plt.plot(x_i[:len(residuals)], total_errors, '-g', label=r'Total Error: $\delta_k$')
 plt.xlabel('x')
 plt.ylabel('y')
@@ -235,8 +237,8 @@ pred_u = NN.predict(test_t).ravel()
 int_bound =  lower_bound_int(NN)
 print(int_bound)
 plt.figure(figsize=(10, 8))
-#plt.plot(test_t, pred_u, '-.r', label=r'$\tilde{f}(x)$') pred_u - int_bound
-plt.plot(test_t, NN(test_t) - int_bound, '--g', label=r'$\tilde{f}_{Mean Zero} (x)$')
+plt.plot(test_t, pred_u, '-.r', label=r'$f_{approx}(x)$')
+plt.plot(test_t,  pred_u - int_bound, '--g', label=r'$\tilde{f} (x)$')
 #plt.plot(test_t, 0 * test_t, '--k', label='zero_solution')
 plt.legend()
 plt.xlabel('x')
@@ -247,11 +249,11 @@ plt.savefig("PINN_result.png")  # Save plot
 
 plt.figure(figsize=(10, 8))
 #plt.plot(test_t, 0 * test_t , '-k', label='Zero Solution', linewidth=3, alpha=0.8)
-plt.plot(test_t, pred_u, '--r', label=r'$\tilde{f}_{Mean Zero} (x)$', linewidth=1, alpha=1)
+plt.plot(test_t, pred_u, '--r', label=r'$\tilde{f}(x)$', linewidth=1, alpha=1)
 plt.ylim(-1, 1)
 plt.legend()
 plt.xlabel('x')
-plt.ylabel(r'$\tilde{f}_{Mean Zero} (x)$')
+plt.ylabel(r'$\tilde{f} (x)$')
 plt.title('Approximate solution Plot')
 plt.savefig("result_axis.png")
 
