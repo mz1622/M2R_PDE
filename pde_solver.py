@@ -30,7 +30,7 @@ NN.summary()
 optm = tf.keras.optimizers.Adam(learning_rate=0.001)
 
 def rho_sin(t):
-    return tf.sin(2*math.pi*t)/7
+    return tf.sin(2*math.pi*t)
 
 
 
